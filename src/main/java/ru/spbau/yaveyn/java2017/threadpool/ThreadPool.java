@@ -4,6 +4,6 @@ import java.util.function.Supplier;
 
 public interface ThreadPool {
 
-    <R> LightFuture<R> acceptTask(Supplier<R> getResult);
+    <R> LightFuture<R> submit(Supplier<R> getResult);
     void shutdown();
 }

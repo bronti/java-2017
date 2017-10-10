@@ -1,5 +1,7 @@
 package ru.spbau.yaveyn.java2017.threadpool.test;
 
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.Assert;
 import ru.spbau.yaveyn.java2017.threadpool.LightExecutionException;
@@ -12,43 +14,48 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class ThreadPoolTest {
 
-    @Test
-    public void testAllTasksDone() throws LightExecutionException, InterruptedException {
-        int n = 1000;
-        AtomicInteger counter = new AtomicInteger(0);
-        ThreadPool tp = new ThreadPoolImpl(4);
-        ArrayList<LightFuture<Integer>> futures = new ArrayList<>(n);
-        for (int i = 0; i < n; ++i) {
-            futures.add(tp.acceptTask(counter::incrementAndGet));
+    private static int NUM_OF_RUNS = 1000;
+
+    private ThreadPool tp;
+    private ArrayList<LightFuture<Integer>> futures;
+    private volatile AtomicInteger counter;
+
+    @Before
+    public void setUp() throws Exception {
+        tp = new ThreadPoolImpl(4);
+        futures = new ArrayList<>(NUM_OF_RUNS);
+        counter = new AtomicInteger(0);
+    }
+
+    @After
+    public void tearDown() throws Exception {
+        if (tp != null) {
+            tp.shutdown();
+            tp = null;
         }
-        for (LightFuture<Integer> f : futures) {
-            f.get();
-        }
-        Assert.assertEquals(n, counter.get());
+        futures = null;
+        counter= null;
     }
 
     @Test
-    public void testFutureGet() throws LightExecutionException, InterruptedException {
-        int n = 1000;
-        ThreadPool tp = new ThreadPoolImpl(4);
-        ArrayList<LightFuture<Integer>> futures = new ArrayList<>(n);
-        for (int i = 0; i < n; ++i) {
+    public void testAllTasksDoneAndGot() throws LightExecutionException, InterruptedException {
+        for (int i = 0; i < NUM_OF_RUNS; ++i) {
             final int k =  i;
-            futures.add(tp.acceptTask(() -> k * k));
+            futures.add(tp.submit(() -> {
+                counter.incrementAndGet();
+                return k * k;
+            }));
         }
-
-        for (int i = 0; i < n; ++i) {
+        for (int i = 0; i < NUM_OF_RUNS; ++i) {
             Assert.assertEquals(new Integer(i * i), futures.get(i).get());
         }
+        Assert.assertEquals(NUM_OF_RUNS, counter.get());
     }
 
     @Test
     public void testShutdown() throws LightExecutionException, InterruptedException {
-        int n = 1000;
-        AtomicInteger counter = new AtomicInteger(0);
-        ThreadPool tp = new ThreadPoolImpl(4);
-        for (int i = 0; i < n; ++i) {
-            tp.acceptTask(counter::incrementAndGet);
+        for (int i = 0; i < NUM_OF_RUNS; ++i) {
+            tp.submit(counter::incrementAndGet);
         }
         int threadCount = Thread.activeCount();
         tp.shutdown();
@@ -56,16 +63,22 @@ public class ThreadPoolTest {
         Assert.assertEquals(threadCount - 4, Thread.activeCount());
     }
 
-    @Test(expected = LightExecutionException.class)
-    public void testExceptionFromSupplier() throws LightExecutionException,  InterruptedException {
-        ThreadPool tp = new ThreadPoolImpl(4);
-        tp.acceptTask(() -> Integer.parseInt("239 tiny mice")).get();
+    @Test
+    public void testExceptionFromSupplier() {
+        boolean exceptionThrown = false;
+        try {
+            tp.submit(() -> Integer.parseInt("239 tiny mice")).get();
+        } catch (Throwable e) {
+            exceptionThrown = true;
+            Assert.assertEquals(LightExecutionException.class, e.getClass());
+            Assert.assertEquals(NumberFormatException.class, e.getCause().getClass());
+        }
+        Assert.assertTrue(exceptionThrown);
     }
 
     @Test
     public void testThanApply() throws LightExecutionException,  InterruptedException {
-        ThreadPool tp = new ThreadPoolImpl(4);
-        LightFuture<Integer> lf = tp.acceptTask(() -> {
+        LightFuture<Integer> lf = tp.submit(() -> {
             try {
                 Thread.sleep(100);
             } catch (Throwable e) {
@@ -78,8 +91,7 @@ public class ThreadPoolTest {
 
     @Test
     public void testIsReady() throws LightExecutionException,  InterruptedException {
-        ThreadPool tp = new ThreadPoolImpl(4);
-        LightFuture<Integer> lf = tp.acceptTask(() -> {
+        LightFuture<Integer> lf = tp.submit(() -> {
             try {
                 Thread.sleep(1000);
             } catch (Throwable e) {

@@ -1,15 +1,12 @@
 package ru.spbau.yaveyn.java2017.threadpool;
 
-import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Queue;
+import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
 public class ThreadPoolImpl implements ThreadPool {
 
-    private List<Thread> threads;
+    private final List<Thread> threads;
     private final Queue<Runnable> tasks = new LinkedList<>();
 
     public ThreadPoolImpl(int n) {
@@ -23,14 +20,14 @@ public class ThreadPoolImpl implements ThreadPool {
     }
 
     @Override
-    public <R> LightFuture<R> acceptTask(Supplier<R> supplier) {
+    public <R> LightFuture<R> submit(Supplier<R> supplier) {
         LightFutureImpl<R> future = new LightFutureImpl<>(this);
-        acceptTaskWithFuture(supplier, future);
+        Runnable task = packSupplier(supplier, future);
+        queueTask(task);
         return future;
     }
 
-    private <R> void acceptTaskWithFuture(Supplier<R> supplier, LightFutureImpl<R> future) {
-        Runnable task = packSupplier(supplier, future);
+    private void queueTask(Runnable task) {
         synchronized (tasks) {
             tasks.add(task);
             tasks.notify();
@@ -81,9 +78,11 @@ public class ThreadPoolImpl implements ThreadPool {
 
     private class LightFutureImpl<R> implements LightFuture<R> {
 
-        private ThreadPoolImpl pool;
+        private static final long MILLIS_TO_WAIT_FOR_PREV_TASK = 3;
 
-        private boolean isReady = false;
+        private final ThreadPoolImpl pool;
+
+        private boolean isReady;
         private boolean finishedExceptionally;
 
         private R result;
@@ -96,16 +95,25 @@ public class ThreadPoolImpl implements ThreadPool {
         private <T> LightFutureImpl(LightFutureImpl<T> prevTask, Function<T, R> transformation) {
             this.pool = prevTask.pool;
 
-            Supplier<R> newTask = () -> {
-                try {
-                    return transformation.apply(prevTask.get());
-                }
-                catch (Throwable e) {
-                    LightFutureImpl.this.feedThrowable(e);
-                    return null;
+            Runnable newTask = new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Optional<T> prevResult = prevTask.getWithTimeout(MILLIS_TO_WAIT_FOR_PREV_TASK);
+                        if (prevResult.isPresent()) {
+                            LightFutureImpl.this.feedResult(transformation.apply(prevResult.get()));
+                        }
+                        else {
+                            pool.queueTask(this);
+                        }
+                    }
+                    catch (Throwable e) {
+                        LightFutureImpl.this.feedThrowable(e);
+                    }
                 }
             };
-            pool.acceptTaskWithFuture(newTask, this);
+
+            pool.queueTask(newTask);
         }
 
         @Override
@@ -121,6 +129,17 @@ public class ThreadPoolImpl implements ThreadPool {
             return doGet();
         }
 
+        private synchronized Optional<R> getWithTimeout(long millis) throws LightExecutionException, InterruptedException {
+            if (!isReady) {
+                wait(millis);
+            }
+            if (isReady) {
+                return Optional.of(doGet());
+            } else {
+                return Optional.empty();
+            }
+        }
+
         private R doGet() throws LightExecutionException {
             if (finishedExceptionally) throw new LightExecutionException(exceptionalResult);
             return result;
@@ -132,21 +151,19 @@ public class ThreadPoolImpl implements ThreadPool {
         }
 
         synchronized void feedResult(R result) {
-            if (!isReady) {
-                this.result = result;
-                finishedExceptionally = false;
-                isReady = true;
-                notify();
-            }
+            assert(!isReady);
+            this.result = result;
+            finishedExceptionally = false;
+            isReady = true;
+            notify();
         }
 
         synchronized void feedThrowable(Throwable result) {
-            if (!isReady) {
-                this.exceptionalResult = result;
-                finishedExceptionally = true;
-                isReady = true;
-                notify();
-            }
+            assert(!isReady);
+            this.exceptionalResult = result;
+            finishedExceptionally = true;
+            isReady = true;
+            notify();
         }
     }
 
