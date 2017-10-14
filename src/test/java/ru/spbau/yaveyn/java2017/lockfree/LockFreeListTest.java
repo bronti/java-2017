@@ -1,12 +1,11 @@
 package ru.spbau.yaveyn.java2017.lockfree;
 
-import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class LockFreeListTest {
@@ -16,21 +15,23 @@ public class LockFreeListTest {
     private LockFreeListImpl<Integer> list;
     private ArrayList<Thread> threads;
 
+    private Thread getThread(final CyclicBarrier barrier, final Runnable work) {
+        return new Thread(() -> {
+            try {
+                barrier.await();
+            } catch (Throwable t) { }
+            work.run();
+        });
+    }
+
     @Before
     public void setUp() {
         list = new LockFreeListImpl<>();
         threads = new ArrayList<>(iterCount);
     }
 
-    @After
-    public void tearDown() throws Exception {
-        list = null;
-        threads = null;
-    }
-
     private void runThreads() {
-        Collections.shuffle(threads);
-        threads.forEach(Thread::run);
+        threads.forEach(Thread::start);
         threads.forEach((t) -> { try { t.join(); } catch (InterruptedException e) {} });
     }
 
@@ -48,9 +49,10 @@ public class LockFreeListTest {
 
     @Test
     public void testAdd() {
+        CyclicBarrier barrier = new CyclicBarrier(iterCount);
         for (int i = 0; i < iterCount; ++i) {
             final int k = i;
-            threads.add(new Thread(() -> list.append(k)));
+            threads.add(getThread(barrier, () -> list.append(k)));
         }
         for (int i = 0; i < iterCount; ++i) {
             Assert.assertFalse(list.contains(i));
@@ -70,11 +72,12 @@ public class LockFreeListTest {
 
         AtomicInteger counterContains = new AtomicInteger(0);
         AtomicInteger counterNotContains = new AtomicInteger(0);
+        CyclicBarrier barrier = new CyclicBarrier(2 * iterCount);
 
         for (int i = 0; i < iterCount; ++i) {
             final int k = i;
-            threads.add(new Thread(() -> { if (list.contains(k)) { counterContains.incrementAndGet(); } }));
-            threads.add(new Thread(() -> { if (!list.contains(k + iterCount)) { counterNotContains.incrementAndGet(); } }));
+            threads.add(getThread(barrier, () -> { if (list.contains(k)) { counterContains.incrementAndGet(); } }));
+            threads.add(getThread(barrier, () -> { if (!list.contains(k + iterCount)) { counterNotContains.incrementAndGet(); } }));
         }
 
         runThreads();
@@ -90,10 +93,11 @@ public class LockFreeListTest {
         }
 
         AtomicInteger counterContains = new AtomicInteger(0);
+        CyclicBarrier barrier = new CyclicBarrier(iterCount);
 
         for (int i = 0; i < iterCount; ++i) {
             final int k = i;
-            threads.add(new Thread(() -> { if (list.remove(k)) { counterContains.incrementAndGet(); } }));
+            threads.add(getThread(barrier, () -> { if (list.remove(k)) { counterContains.incrementAndGet(); } }));
         }
 
         runThreads();
@@ -105,11 +109,12 @@ public class LockFreeListTest {
     @Test
     public void testComplex() {
         AtomicInteger counter = new AtomicInteger(0);
+        CyclicBarrier barrier = new CyclicBarrier(2 * iterCount);
 
         for (int i = 0; i < iterCount; ++i) {
             final int k = i;
-            threads.add(new Thread(() -> { if (list.remove(k)) { counter.incrementAndGet(); } }));
-            threads.add(new Thread(() -> list.append(k)));
+            threads.add(getThread(barrier, () -> { if (list.remove(k)) { counter.incrementAndGet(); } }));
+            threads.add(getThread(barrier, () -> list.append(k)));
         }
 
         runThreads();
