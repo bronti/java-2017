@@ -54,7 +54,7 @@ public class FtpTest {
     private void doListTest(int clNum, String path) throws SimpleClientException {
         doTest(clNum, (client) -> {
             try {
-                List<SimpleClient.FileInfo> result = client.executeList(path);
+                List<FileInfo> result = client.executeList(path);
                 Path dirPath = Paths.get(path);
                 if (!Files.exists(dirPath) || !Files.isDirectory(dirPath)) {
                     Assert.assertEquals(0, result.size());
@@ -69,7 +69,8 @@ public class FtpTest {
                     });
                 }
             } catch (IOException | SimpleClientException e) {
-                assert(false);
+                e.printStackTrace();
+                Assert.fail("Unexpected exception.");
             }
         });
     }
@@ -85,7 +86,8 @@ public class FtpTest {
                     Assert.assertArrayEquals(Files.readAllBytes(filePath), result);
                 }
             } catch (IOException | SimpleClientException e) {
-                assert(false);
+                e.printStackTrace();
+                Assert.fail("Unexpected exception.");
             }
         });
     }
@@ -112,16 +114,16 @@ public class FtpTest {
 
     @Test
     public void simpleGetTest() throws SimpleClientException {
-        doListTest(1, "build.gradle");
+        doGetTest(1, "build.gradle");
     }
 
     @Test
     public void manyClientsGetTest() throws SimpleClientException {
-        doListTest(10, "build.gradle");
+        doGetTest(10, "build.gradle");
     }
 
     @Test
     public void nonExistentFileGetTest() throws SimpleClientException {
-        doListTest(10, "src/main");
+        doGetTest(10, "src/main");
     }
 }

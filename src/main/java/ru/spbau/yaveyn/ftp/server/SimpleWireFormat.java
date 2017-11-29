@@ -1,21 +1,19 @@
 package ru.spbau.yaveyn.ftp.server;
 
-import com.sun.xml.internal.ws.policy.privateutil.PolicyUtils;
+import ru.spbau.yaveyn.ftp.FileInfo;
 import ru.spbau.yaveyn.ftp.RequestType;
 
 import java.io.*;
 import java.net.Socket;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
-public class SimpleProtocol implements Runnable {
+public class SimpleWireFormat implements Runnable {
     private Socket client;
+    private SimpleWorker worker = new SimpleWorker();
 
-    SimpleProtocol(Socket client) {
+    SimpleWireFormat(Socket client) {
         this.client = client;
     }
 
@@ -53,24 +51,20 @@ public class SimpleProtocol implements Runnable {
     }
 
     private void handleList(Path path, DataOutputStream out) throws IOException {
-        if (Files.exists(path) && Files.isDirectory(path)) {
-            List<Path> files = Files.list(path).collect(Collectors.toList());
-            out.writeInt(files.size());
-            for (Path filePath : files) {
-                out.writeUTF(filePath.getFileName().toString());
-                out.writeBoolean(Files.isDirectory(filePath));
-            }
-        } else {
-            out.writeLong(0);
+        List<FileInfo> filesInfo = worker.getFilesInfo(path);
+        out.writeInt(filesInfo.size());
+        for (FileInfo info : filesInfo) {
+            out.writeUTF(info.name);
+            out.writeBoolean(info.isDirectory);
         }
     }
 
     private void handleGet(Path path, DataOutputStream out) throws IOException {
-        if (Files.exists(path) && Files.isRegularFile(path)) {
-            out.writeLong(Files.size(path));
-            out.write(Files.readAllBytes(path));
-        } else {
-            out.writeLong(0);
+        byte[] content = worker.getFileContent(path);
+        int size = content == null ? 0 : content.length;
+        out.writeLong(size);
+        if (size != 0) {
+            out.write(content);
         }
     }
 }

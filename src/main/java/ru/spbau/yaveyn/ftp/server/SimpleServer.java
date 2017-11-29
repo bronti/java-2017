@@ -1,9 +1,6 @@
 package ru.spbau.yaveyn.ftp.server;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
@@ -40,12 +37,12 @@ public class SimpleServer implements AutoCloseable {
         try {
             while (true) {
                 Socket client = serverSocket.accept();
-                executorService.submit(new SimpleProtocol(client));
+                executorService.submit(new SimpleWireFormat(client));
             }
         } catch (SocketException e) {
             // server socket is closed.
         } catch (IOException e) {
-            // ?...
+            e.printStackTrace(); // There should be proper logging.
         }
     }
 }
